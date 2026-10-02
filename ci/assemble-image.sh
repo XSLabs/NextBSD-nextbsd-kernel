@@ -157,6 +157,9 @@ seed_overlays() {
     fi
     cp -R "$SEED_ROOTFS/." "$ROOTFS/"
     [ -f "$ROOTFS/private/etc/master.passwd" ] && chmod 0600 "$ROOTFS/private/etc/master.passwd"
+    # git can't store sub-0644 modes. sudo refuses a sudoers that is not mode
+    # 0440 ("is mode 0644, should be 0440"), as overlays' seed.sh also fixes up.
+    [ -f "$ROOTFS/private/etc/sudoers" ] && chmod 0440 "$ROOTFS/private/etc/sudoers"
     log "seeded /etc from nextbsd-overlays ($SEED_ROOTFS)"
 
     # /etc/os-release, which nextbsd/build.sh writes and this did not. It is the
@@ -241,8 +244,19 @@ fixup_rootfs() {
     # staged kexts are 1001:1001 -> kextd load fails "authentication problems"
     # (OSReturn 0xdc00800d) and NO driver binds (e1000 stays unattached, 0 NICs).
     # chown the whole staged tree to 0:0; makefs has no -F manifest so it
-    # packages this ownership verbatim. (No setuid bits in this tree to clear.)
+    # packages this ownership verbatim.
     chown -R 0:0 "$ROOTFS"
+    # Linux chown(2) clears S_ISUID/S_ISGID even when root does it, so re-apply
+    # the setuid bits after the chown. nextbsd-contrib stages sudo as 4511.
+    [ -f "$ROOTFS/usr/bin/sudo" ] && chmod 4511 "$ROOTFS/usr/bin/sudo"   # Darwin: -r-s--x--x
+    # passwd(1) is setuid so a user can change their own password: the plists
+    # are 0644 owned by root, and unlike Darwin we have no opendirectoryd to
+    # hand the write to. Anything else added here must be listed, or the chown
+    # above silently leaves it unprivileged and it fails at the write.
+    [ -f "$ROOTFS/usr/bin/passwd" ] && chmod 4555 "$ROOTFS/usr/bin/passwd"
+    # chpass and its links, for the same reason. The links are symlinks, so
+    # only the target needs the bit.
+    [ -f "$ROOTFS/usr/bin/chpass" ] && chmod 4555 "$ROOTFS/usr/bin/chpass"
 }
 
 # ---------------------------------------------------------------------------
