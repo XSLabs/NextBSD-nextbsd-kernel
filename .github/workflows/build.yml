@@ -151,7 +151,7 @@ jobs:
       - name: Checkout nextbsd-userland (migcom + wire types)
         uses: actions/checkout@v4
         with:
-          repository: nextbsd-redux/nextbsd-userland
+          repository: nextbsd/nextbsd-userland
           ref: main
           path: .userland
 
@@ -519,6 +519,13 @@ jobs:
       # and inject the kernel in a FreeBSD VM" path, so the kernel CI no longer
       # depends on the ISO (which depends on nextbsd-pkg). The image is uploaded
       # for the separate KVM boot job. amd64 only for now (no arm64 boot job).
+      - name: Checkout shared assembly + boot harness (nextbsd-ci, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: nextbsd/nextbsd-ci
+          ref: v0.3.3
+          path: nextbsd-ci
+
       - name: Assemble disk.img (this kernel + component continuous artifacts)
         if: github.event_name == 'pull_request'
         env:
@@ -538,9 +545,9 @@ jobs:
           mkdir -p art
           # base rootfs (compat), the Darwin userland layer, and driver kexts —
           # each from its own `continuous` release; the kernel is THIS build's.
-          gh release download continuous -R nextbsd-redux/nextbsd-freebsd-compat \
+          gh release download continuous -R nextbsd/nextbsd-freebsd-compat \
             --pattern 'nextbsd-base-${{ matrix.target }}.tar.gz' --dir art --clobber
-          gh release download continuous -R nextbsd-redux/nextbsd-userland \
+          gh release download continuous -R nextbsd/nextbsd-userland \
             --pattern 'nextbsd-userland-${{ matrix.target }}.tar.gz' --dir art --clobber
           # Third-party base programs (zsh, sudo, pico) live in nextbsd-contrib by
           # the repo boundary rule, so none of the above ships them. Without it the
@@ -593,12 +600,13 @@ jobs:
           export MODULES_TGZ="$(ls art/*kext*.tar.gz 2>/dev/null | tr '\n' ' ')"
           # pkg-free /etc seed from nextbsd-overlays (no git in container), same
           # as nextbsd-userland's assembly step.
-          gh api repos/nextbsd-redux/nextbsd-overlays/tarball/main > /tmp/overlays.tar.gz
+          gh api repos/nextbsd/nextbsd-overlays/tarball/main > /tmp/overlays.tar.gz
           mkdir -p "$WORK/seed"
           tar -C "$WORK/seed" --strip-components=1 -xzf /tmp/overlays.tar.gz
           export SEED_ROOTFS="$WORK/seed/rootfs"
-          chmod +x ci/assemble-image.sh
-          ./ci/assemble-image.sh
+          # The SHARED assembly (nextbsd-ci, pinned above) replaces this repo's
+          # vendored ci/ copy (nextbsd#376): one recipe for every consumer.
+          sh nextbsd-ci/scripts/assemble-image.sh
 
       - name: Upload native-assembled image
         if: github.event_name == 'pull_request'
@@ -651,7 +659,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends qemu-system-x86 expect ovmf
 
       # The shared nextbsd-ci boot harness, pinned to the lockstep release tag
-      # (v0.3.0). Replaces the dead nextbsd-redux/nextbsd monolith fetch (that
+      # (v0.3.3). Replaces the dead nextbsd-redux/nextbsd monolith fetch (that
       # org is gone; the URL 404s) AND the main-tracking drift in one move. The
       # harness is modular (boot-test.sh + patterns.tcl + the *.exp.inc loader/
       # login/teardown contract + the marker manifest), so it is checked out as a
@@ -660,7 +668,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: nextbsd/nextbsd-ci
-          ref: v0.3.0
+          ref: v0.3.3
           path: nextbsd-ci
 
       # A KERNEL smoke-test gates on "does THIS kernel boot" (reached login), NOT
@@ -709,7 +717,7 @@ jobs:
   # build job self-assembled from THIS kernel, gate on reaching the getty login
   # prompt, never gate `publish`.
   #
-  # On the shared nextbsd-ci harness @v0.3.0 (pinned tag) like the amd64 sibling
+  # On the shared nextbsd-ci harness @v0.3.3 (pinned tag) like the amd64 sibling
   # above -- the T4 lockstep now covers BOTH arches. NB_LOGIN_ONLY=1: the kernel
   # image ships no sentinel suite, so the harness boots -> logs in -> confirms a
   # clean end-state -> powers off, and the gate is the harness exit class. The
@@ -754,7 +762,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: nextbsd/nextbsd-ci
-          ref: v0.3.0
+          ref: v0.3.3
           path: nextbsd-ci
 
       - name: Boot test (this kernel, self-assembled arm64 image)
